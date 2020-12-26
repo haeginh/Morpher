@@ -21,6 +21,6 @@ else()
 endif()
 
 # Add your project files
-file(GLOB SRCFILES *.cpp)
+file(GLOB SRCFILES *.cpp *.cc)
 add_executable(${PROJECT_NAME} ${SRCFILES} ${dqs})
 target_link_libraries(${PROJECT_NAME} igl::core igl::opengl_glfw ${Geant4_LIBRARIES})
