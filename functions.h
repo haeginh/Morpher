@@ -203,7 +203,7 @@ void CalculateScalingWeights(MatrixXd &C, MatrixXd &V,MatrixXi &T,MatrixXd &W){
     // compute BBW weights matrix
     igl::BBWData bbw_data;
     // only a few iterations for sake of demo
-    bbw_data.active_set_params.max_iter = 15;
+    bbw_data.active_set_params.max_iter = 20;
     bbw_data.verbosity = 2;
     igl::bbw(V,T,b,bc,bbw_data,W);
 }
@@ -395,71 +395,156 @@ void CleanWeights(MatrixXd &W){
 #include "igl/point_simplex_squared_distance.h"
 #include "igl/barycentric_coordinates.h"
 
-map<int, MatrixXd> GenerateBarycentricCoord(MatrixXd V_f, MatrixXi T_f, MatrixXd V){
+map<int, map<int, double>> GenerateBarycentricCoord(MatrixXd V_f, MatrixXi T_f, MatrixXi F_f, MatrixXd V){
     map<tuple<int,int,int>,vector<int>> grid = GenerateGrid(V);
-    map<int, MatrixXd> baryCoords;
+    map<int, map<int, double>> baryCoords;
+    double epsl(-1e-5);
     for(int n=0;n<T_f.rows();n++){
-        MatrixXd tet(4,3);
-        for(int e=0;e<4;e++) tet.row(e) = V_f.row(T_f(n,e));
-        MatrixXd max = tet.colwise().maxCoeff();
-        MatrixXd min = tet.colwise().minCoeff();
-        int i_max = floor(max(0,0)+0.5);int i_min = floor(min(0,0)+0.5);
-        int j_max = floor(max(0,1)+0.5);int j_min = floor(min(0,1)+0.5);
-        int k_max = floor(max(0,2)+0.5);int k_min = floor(min(0,2)+0.5);
+        vector<Vector3d> tet;
+        Vector3d max(-1e10,-1e10,-1e10), min(1e10,1e10,1e10);
+        for(int e=0;e<4;e++){
+            tet.push_back(V_f.row(T_f(n,e)).transpose());
+            max(0) = max(0)>tet[e](0)? max(0):tet[e](0);
+            max(1) = max(1)>tet[e](1)? max(1):tet[e](1);
+            max(2) = max(2)>tet[e](2)? max(2):tet[e](2);
+            min(0) = min(0)<tet[e](0)? min(0):tet[e](0);
+            min(1) = min(1)<tet[e](1)? min(1):tet[e](1);
+            min(2) = min(2)<tet[e](2)? min(2):tet[e](2);
+        }
+        double invVol6 = 1./(tet[1]-tet[0]).cross(tet[2]-tet[0]).dot(tet[3]-tet[0]);
+        int i_max = floor(max(0)+0.5);int i_min = floor(min(0)+0.5);
+        int j_max = floor(max(1)+0.5);int j_min = floor(min(1)+0.5);
+        int k_max = floor(max(2)+0.5);int k_min = floor(min(2)+0.5);
+        for(int i=i_min;i<i_max+1;i++){
+            for(int j=j_min;j<j_max+1;j++){
+                for(int k=k_min;k<k_max+1;k++){
+                    auto key = make_tuple(i,j,k);
+                    for(int idx:grid[key]){
+                        if(baryCoords.find(idx)!=baryCoords.end()) continue;
+                        Vector3d v = V.row(idx).transpose();
+                        double b0 = (tet[1]-v).cross(tet[2]-v).dot(tet[3]-v)*invVol6;
+                        if(b0<epsl) continue;
+                        double b1 = (v-tet[0]).cross(tet[2]-tet[0]).dot(tet[3]-tet[0])*invVol6;
+                        if(b1<epsl) continue;
+                        double b2 = (tet[1]-tet[0]).cross(v-tet[0]).dot(tet[3]-tet[0])*invVol6;
+                        if(b2<epsl) continue;
+                        double b3 = (tet[1]-tet[0]).cross(tet[2]-tet[0]).dot(v-tet[0])*invVol6;
+                        if(b3<epsl) continue;
+                        map<int, double> bary;
+                        bary[T_f(n,0)] = b0; bary[T_f(n,1)] = b1; bary[T_f(n,2)] = b2; bary[T_f(n,3)] = b3;
+                        baryCoords[idx] = bary;
+                    }
+                }
+            }
+        }
+        cout<<"\rGenerating barycentric coord..."<<baryCoords.size()<<"/"<<V.rows()<<flush;
+    }
+    if(baryCoords.size()==V.rows()){
+        cout<<endl<<"Generated bary. coord. - No tri coord."<<endl; return baryCoords;
+    }
+    map<int, Vector3d> triGap;
+    map<int, double> triDist;
+    map<int, map<int,double>> baryCoordsTri;
+    for(int n=0;n<F_f.rows();n++){
+        vector<Vector3d> tri;
+        Vector3d max(-1e10,-1e10,-1e10), min(1e10,1e10,1e10);
+        for(int e=0;e<3;e++){
+            tri.push_back(V_f.row(F_f(n,e)).transpose());
+            max(0) = max(0)>tri[e](0)? max(0):tri[e](0);
+            max(1) = max(1)>tri[e](1)? max(1):tri[e](1);
+            max(2) = max(2)>tri[e](2)? max(2):tri[e](2);
+            min(0) = min(0)<tri[e](0)? min(0):tri[e](0);
+            min(1) = min(1)<tri[e](1)? min(1):tri[e](1);
+            min(2) = min(2)<tri[e](2)? min(2):tri[e](2);
+        }
+        Vector3d normal = (tri[1]-tri[0]).cross(tri[2]-tri[0]).normalized();
+        int i_max = floor(max(0)+0.5);int i_min = floor(min(0)+0.5);
+        int j_max = floor(max(1)+0.5);int j_min = floor(min(1)+0.5);
+        int k_max = floor(max(2)+0.5);int k_min = floor(min(2)+0.5);
         for(int i=i_min-1;i<i_max+2;i++){
             for(int j=j_min-1;j<j_max+2;j++){
                 for(int k=k_min-1;k<k_max+2;k++){
                     auto key = make_tuple(i,j,k);
                     for(int idx:grid[key]){
-                        bool done = baryCoords.find(idx) != baryCoords.end();
-                        if(done && baryCoords[idx].minCoeff()>0) continue;
-                        MatrixXd bary;
-                        igl::barycentric_coordinates(V.row(idx),tet.row(0),tet.row(1),tet.row(2),tet.row(3),bary);
-                        MatrixXd bary1(1,5); bary1 << bary, n;
-                        if(!done) baryCoords[idx] = bary1;
-                        else if(bary.minCoeff() > baryCoords[idx].minCoeff())
-                            baryCoords[idx] = bary1;
+                        if(baryCoords.find(idx)!=baryCoords.end()) continue;
+                        Vector3d v = V.row(idx).transpose();
+                        double invVol6 = 1./(tri[2]-v).cross(tri[1]-v).dot(tri[0]-v);
+                        if(invVol6<0) continue;
+                        double dist=normal.dot(v-tri[0]);
+                        Vector3d v_proj = v-normal*dist;
+
+                        double b0 = (tri[2]-v).cross(tri[1]-v).dot(v_proj-v)*invVol6; //if(b0<-0.3) continue;
+                        double b1 = (tri[2]-v).cross(v_proj-v).dot(tri[0]-v)*invVol6; //if(b1<-0.3) continue;
+                        double b2 = (v_proj-v).cross(tri[1]-v).dot(tri[0]-v)*invVol6; //if(b2<-0.3) continue;
+
+                        double minDist;
+                        if(b0<0 && b1<0) minDist = (v-tri[2]).norm();
+                        else if(b2<0 && b1<0) minDist = (v-tri[0]).norm();
+                        else if(b0<0 && b2<0) minDist = (v-tri[1]).norm();
+                        else if(b0<0) minDist = (v-tri[1]).cross(tri[2]-tri[1]).norm()/(tri[2]-tri[1]).norm();
+                        else if(b1<0) minDist = (v-tri[0]).cross(tri[2]-tri[0]).norm()/(tri[2]-tri[0]).norm();
+                        else if(b2<0) minDist = (v-tri[1]).cross(tri[0]-tri[1]).norm()/(tri[0]-tri[1]).norm();
+                        else minDist =dist;
+
+                        if(baryCoordsTri.find(idx)!=baryCoordsTri.end()){
+                            if(minDist>triDist[idx]) continue;
+                        }
+                        map<int, double> bary;
+                        bary[F_f(n,0)] = b0; bary[F_f(n,1)] = b1; bary[F_f(n,2)] = b2;
+                        baryCoordsTri[idx] = bary;
+                        triGap[idx] = normal*dist;
+                        triDist[idx] = minDist;
                     }
                 }
             }
         }
+        cout<<"\rGenerating barycentric coord..."<<baryCoords.size()+baryCoordsTri.size()<<"/"<<V.rows()<<flush;
     }
-    cout<<"("<<baryCoords.size()<<"/"<<V.rows()<<")"<<endl;
+    for(int i=0;i<V.rows();i++)
+        if(baryCoords.find(i)==baryCoords.end()) baryCoords[i]=baryCoordsTri[i];
+
+    if(baryCoords.size()!=V.rows()){
+        cout<<"Check if all the vertices are in frame model!!"<<endl; exit(100);
+    }
+    cout<<endl<<"Generated barycentric coord...(tet "<<baryCoords.size()-baryCoordsTri.size()<<"/ tri "<<baryCoordsTri.size()<<")"<<endl;
     return baryCoords;
 }
-void PrintBaryCoords(string file, map<int, MatrixXd> &baryCoords){
+void PrintBaryCoords(string file, map<int, map<int, double>> &baryCoords){
     ofstream ofs(file); ofs<<baryCoords.size()<<endl;
     for(int i=0;i<baryCoords.size();i++){
-        ofs<<baryCoords[i](0,4)<<"\t"
-           <<baryCoords[i](0,0)<<"\t"
-           <<baryCoords[i](0,1)<<"\t"
-           <<baryCoords[i](0,2)<<"\t"
-           <<baryCoords[i](0,3)<<endl;
+        ofs<<baryCoords[i].size()<<" ";
+        for(auto iter:baryCoords[i])
+            ofs<<iter.first<<" "<<iter.second<<" ";
+        ofs<<endl;
     }ofs.close();
 }
-map<int, MatrixXd> ReadBaryFile(string file){
-    map<int, MatrixXd> baryCoords;
+map<int, map<int, double>> ReadBaryFile(string file){
+    map<int, map<int, double>> baryCoords;
     ifstream ifs(file);
     if(!ifs.is_open()) {
         cout<<file+" is not open!!!"<<endl;
         return baryCoords;
     }
-    int num, tetID; ifs>>num;
-    double a,b,c,d;
+    int num; ifs>>num;
     for(int i=0;i<num;i++){
-        ifs>>tetID>>a>>b>>c>>d;
-        MatrixXd bary(1,5);
-        bary<<a,b,c,d,tetID;
+        int count; ifs>>count;
+        int vID; double w;
+        map<int, double> bary;
+        for(int n=0;n<count;n++){
+            ifs>>vID>>w;
+            bary[vID]=w;
+        }
         baryCoords[i] = bary;
     }ifs.close();
     return baryCoords;
 }
-SparseMatrix<double> GenerateBarySparse(map<int, MatrixXd> &baryCoords, int v_size, MatrixXi tet){
+SparseMatrix<double> GenerateBarySparse(map<int, map<int, double>> &baryCoords, int v_size){
     typedef Eigen::Triplet<double> T;
     std::vector<T> triplets;
-    for(auto iter:baryCoords){
-        for(int i=0;i<4;i++)
-            triplets.push_back(T(iter.first,tet(iter.second(0,4),i),iter.second(0,i)));
+    for(int i=0;i<baryCoords.size();i++){
+        for(auto w:baryCoords[i]){
+            triplets.push_back(T(i,w.first,w.second));
+        }
     }
     SparseMatrix<double> mat(baryCoords.size(),v_size);
     mat.setFromTriplets(triplets.begin(),triplets.end());
@@ -560,4 +645,138 @@ MatrixXd ReadShellOBJ(string shellOBJ, MatrixXd &V_s, MatrixXi &F_s){
     return V_fix;
 }
 
+#include "G4SystemOfUnits.hh"
+using namespace Tbx;
+Transfo transfo_from_eulerYXZ(double ay, double ax, double az )
+{
+  Vec3 vx = {1, 0, 0 }, vy = { 0, 1, 0 }, vz = { 0, 0, 1 };
+  ay *= deg; ax *= deg; az *=deg;
+  double c1 = cos(ay); double c2 = cos(ax); double c3=cos(az);
+  double s1 = sin(ay); double s2 = sin(ax); double s3=sin(az);
+  Mat3 mat(c1*c3+s1*s2*s3,c3*s1*s2-c1*s3,c2*s1,
+           c2*s3, c2*c3, -s2,
+           c1*s2*s3-c3*s1,c1*c3*s2+s1*s3,c1*c2);
+  return Transfo(mat);
+//  Mat3 tx = Transfo::rotate(vx,ax*deg).get_mat3();
+//  Mat3 ty = Transfo::rotate(vy,ay*deg).get_mat3();
+//  Mat3 tz = Transfo::rotate(vz,az*deg).get_mat3();
+//  return Transfo(ty*tx*tz);
+}
+
+vector<vector<Dual_quat_cu>> ReadBVH(string fileN, MatrixXd C, MatrixXi BE, VectorXi P){
+    vector<vector<Transfo>> data;
+    vector<vector<Dual_quat_cu>> conv_data;
+
+    ifstream ifs(fileN);
+    if(!ifs.is_open()) return conv_data;
+
+    string dump;
+    while(getline(ifs,dump)){
+        stringstream ss(dump);
+        ss>>dump;
+        if(dump=="MOTION") break;
+    }
+    int frameNo; double frameT;
+    ifs>>dump>>frameNo;
+    ifs>>dump>>dump>>frameT;
+    cout<<"frame #: "<<frameNo<<" / frame time: "<<frameT<<endl;
+    data.resize(frameNo);
+    double x,y,z;
+
+    for(int i=0;i<frameNo;i++){
+        data[i].resize(23);
+        vector<Transfo> bvhData;
+        ifs>>x>>y>>z;
+        Transfo trans = Transfo::translate(0,0,0);// = Transfo::translate(x,y,z);
+
+        //collect a row
+        for(int j=0;j<19;j++){
+            ifs>>y>>x>>z;
+//            if(j==5) bvhData.push_back(transfo_from_eulerYXZ(y,z,x));
+ //           else if(j==11) bvhData.push_back(transfo_from_eulerYXZ(y,-z,-x));
+ //           else if(j==6) bvhData.push_back(transfo_from_eulerYXZ(y,z,x));
+ //           else if(j==12) bvhData.push_back(transfo_from_eulerYXZ(y,z,x));
+            //else
+            bvhData.push_back(transfo_from_eulerYXZ(y,x,z));
+
+        }
+
+//        bvhData[1] = Transfo::identity();
+//        bvhData[2] = Transfo::identity();
+        //bvhData[3] = Transfo::identity();
+        //bvhData[9] = Transfo::identity();
+
+        Transfo tf4 = Transfo::rotate(Vec3(-0.2,-1,0),85*deg);
+        Transfo tf10 = Transfo::rotate(Vec3(-0.2,1,0),85*deg);
+        Transfo tf6 = Transfo::rotate(Vec3(0,1,0),80*deg);
+        Transfo tf12 = Transfo::rotate(Vec3(0,1,0),-80*deg);
+        bvhData[4]  = bvhData[4]*tf4;
+        bvhData[6]  = bvhData[6]*tf6;
+        bvhData[10]  = bvhData[10]*tf10;
+        bvhData[12]  = bvhData[12]*tf12;
+
+        Transfo tf0 = trans*bvhData[0];
+//        Transfo tf0 = bvhData[0];
+        for(int j=0;j<BE.rows();j++){
+            int p = BE(j,0);
+            if(P(j)<0) {
+                data[i][j] = Transfo::identity();
+                continue;
+            }
+            Transfo tf = Transfo::translate(Vec3(C(p,0),C(p,1),C(p,2)))*bvhData[p]*Transfo::translate(-Vec3(C(p,0),C(p,1),C(p,2)));
+            data[i][j]=data[i][P(j)]*tf;
+//            if(p==4) data[i][j] = data[i][j];
+        }
+        for(Transfo &tf:data[i]){
+            tf = tf0*tf;
+        }
+    }
+
+    for(auto d:data){
+        vector<Dual_quat_cu> du_quat;
+        for(auto tf:d){
+            du_quat.push_back(Dual_quat_cu(tf));
+        }
+        conv_data.push_back(du_quat);
+    }
+    return conv_data;
+}
+
+void dual_quat_deformer(vector<Dual_quat_cu> dual_quat, MatrixXd & U, MatrixXd W, MatrixXd &C, MatrixXi BE)
+ {
+     cout<<"Start deformation.."<<flush;
+     for(int id = 0;id<U.rows();id++)
+     {
+         Dual_quat_cu dq_blend;
+         bool first(true);
+         Quat_cu q0;
+
+         for(int i=0;i<W.cols();i++){
+            if(first){
+                 dq_blend = dual_quat[i] * W(id,i);
+                 q0 = dual_quat[i].rotation();
+                 first = false;
+                 continue;
+             }
+             if( dual_quat[i].rotation().dot( q0 ) < 0.f )
+                 dq_blend = dq_blend + dual_quat[i] * (-W(id,i));
+             else dq_blend = dq_blend + dual_quat[i] * W(id,i);
+         }
+
+         // Compute animated position
+         Point3 vi = dq_blend.transform(Point3(U(id,0), U(id,1), U(id,2)));
+         U(id,0) = vi.x;
+         U(id,1) = vi.y;
+         U(id,2) = vi.z;
+     }
+     for(int i=0;i<BE.rows();i++){
+         Dual_quat_cu dq_blend = dual_quat[i];
+         Point3 c=dq_blend.transform(Point3(C(BE(i,1),0),C(BE(i,1),1),C(BE(i,1),2)));
+         C(BE(i,1),0) = c.x; C(BE(i,1),1) = c.y; C(BE(i,1),2) = c.z;
+     }
+     Dual_quat_cu dq_blend = dual_quat[0];
+     Point3 c=dq_blend.transform(Point3(C(0,0),C(0,1),C(0,2)));
+     C(0,0) = c.x; C(0,1) = c.y; C(0,2) = c.z;
+     cout<<"done"<<endl;
+ }
 #endif // FUNCTIONS_H

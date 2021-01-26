@@ -12,7 +12,7 @@ void PrintUsage(){
     cout<<"\t./Morpher -bbw [PREFIX.mesh] [frame.ply] [tgf file] [bone P interval(default:1cm)]"<<endl;
     cout<<"\toutput: PREFIX.fbary, PREFIX_bbwF.mesh, PREFIX_fb.w, PREFIX_fs.w, PREFIX.tgf"<<endl<<endl;
     cout<<"4. Widen the arms and legs of the whole phantom."<<endl;
-    cout<<"\t./Morpher -bary [PREFIX(.mesh)] [shell.obj]"<<endl;
+    cout<<"\t./Morpher -shell [PREFIX(.mesh)] [shell.obj]"<<endl;
     cout<<"\toutput: PREFIX.bary, PREFIX_s.mesh, PREFIX_s.fbary"<<endl<<endl;
 
     cout<<"-morphing-"<<endl;
@@ -21,7 +21,10 @@ void PrintUsage(){
     cout<<"\t./Morpher [PREFIX] [target.obj]"<<endl;
     cout<<"\toutput: filename_frame.mesh, filename_bary.m"<<endl;
 
-    cout<<"-morphing-"<<endl;
+    cout<<"-posture changing-"<<endl;
+    cout<<"** preprocessing of -bbw is required"<<endl;
+    cout<<"** prepare PREFIX.obj"<<endl;
+    cout<<"\t./Morpher -bvh [**.bvh] PREFIX"<<endl;
 }
 
 #endif // README_HH

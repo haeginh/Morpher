@@ -1,3 +1,4 @@
+CMakeLists.txt
 readme.hh
 Makefile
 morpher.hh

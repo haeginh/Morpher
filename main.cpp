@@ -17,7 +17,7 @@ using namespace std;
 const RowVector3d sea_green(70./255.,252./255.,167./255.);
 const RowVector3d red(1.,0.,0.);
 const RowVector3d blue(0.,0.,1.);
-MatrixXd V,U,C, C_widen;
+MatrixXd V,U,C, C_U;
 MatrixXd V_target,C_target;
 MatrixXd W, W_s, W_shell, W_s_shell, W_dp;
 MatrixXd V_shell;
@@ -32,46 +32,49 @@ void PrintOBJ(string fileN, string mtlN);
 string objStr;
 void Morph();
 morpher* morph;
-void LimbWiden_arm(double degree, MatrixXd &U, MatrixXd W);
-void LimbWiden_arm(double degree, MatrixXd &C);
-void LimbWiden_leg(double degree, MatrixXd &U, MatrixXd W);
-void LimbWiden_leg(double degree, MatrixXd &C);
+vector<vector<Dual_quat_cu>> dual_quat_vec;
 bool key_down(igl::opengl::glfw::Viewer &viewer, unsigned char key, int mods)
 {
   switch(key)
   {
-    case '0':
+   case '0':
       viewer.data().clear();
-      viewer.data().set_mesh(V,F);
-      //morph->UpdateFrame(V);
-      viewer.data().set_edges(C,BE,sea_green);
+      viewer.data().set_mesh(V_target,F_target);
+      viewer.data().set_edges(C_target,BE,sea_green);
       break;
   case '1':
-      toggle = !toggle;
-    viewer.data().clear();
-    if(toggle)  {
-        viewer.data().set_mesh(V_shell,F_shell);
-        W_dp = W_shell;
+    morph->MatchJoints(C_target);
+    V_shell = morph->GetMorphedShellVerts();
+    U = morph->GetWholeVerts();
+    morph->CalculateBaryCoord();
+  {ofstream ofs("morphed.node");
+      ofs<<V_shell.rows()<<" 3 0 0"<<endl;
+      for(int i=0;i<V_shell.rows();i++){
+          ofs<<i+1<<" "<<V_shell(i,0)<<" "<<V_shell(i,1)<<" "<<V_shell(i,2)<<endl;
+      }ofs.close();
     }
-    else{
-        viewer.data().set_mesh(U,F);
-        W_dp = W;
-    }
-    //morph->UpdateFrame(V);
-    viewer.data().set_edges(C_widen,BE,blue);
+    viewer.data().clear();   
+    viewer.data().set_mesh(V_shell,F_shell);
+    viewer.data().set_edges(C_target,BE,red);
     break;
   case '2':
+    morph->StartMorph(V_target,F_target);
+    V_shell = morph->GetMorphedShellVerts();
+  {ofstream ofs("morphed.node");
+      ofs<<V_shell.rows()<<" 3 0 0"<<endl;
+      for(int i=0;i<V_shell.rows();i++){
+          ofs<<i+1<<" "<<V_shell(i,0)<<" "<<V_shell(i,1)<<" "<<V_shell(i,2)<<endl;
+      }ofs.close();
+    }
     viewer.data().clear();
-    viewer.data().set_mesh(V_target,F_target);
+    viewer.data().set_mesh(V_shell,F_shell);
     viewer.data().set_edges(C_target,BE,red);
     break;
   case '3':
-      toggle = !toggle;
-    viewer.data().clear();
-    if(toggle)  viewer.data().set_mesh(V_shell,F_shell);
-    else viewer.data().set_mesh(U,F);
-    //morph->UpdateFrame(V);
-    viewer.data().set_edges(C_target,BE,red);
+      morph->GetMorphedVertices(U);
+      viewer.data().clear();
+      viewer.data().set_mesh(U,F);
+      viewer.data().set_edges(C_target,BE,red);
     break;
 //  case '=':
 //  {
@@ -89,56 +92,7 @@ bool key_down(igl::opengl::glfw::Viewer &viewer, unsigned char key, int mods)
 //      viewer.data().set_edges(C_target,BE,red);
 //  }
     break;
-//  case '2':
-//    morph->GetMorphedVertices(V1);
-//    viewer.data().clear();
-//    viewer.data().set_mesh(V1,F1);
-//    viewer.data().set_edges(C_target,BE,red);
-//    break;
-  case ']':
-      degree_arm += 5;
-      LimbWiden_arm(5,U,W);
-      LimbWiden_arm(5,V_shell,W_shell);
-      LimbWiden_arm(5,C_widen);
-      cout<<"arm degree: "<<degree_arm<<endl;
-     // morph->UpdateFrame(U);
-      if(toggle)viewer.data().set_mesh(V_shell,F_shell);
-      else viewer.data().set_mesh(U,F);
-      viewer.data().set_edges(C_widen,BE,blue);
-      break;
-  case '[':
-      degree_arm -= 5;
-      LimbWiden_arm(-5,U,W);
-      LimbWiden_arm(-5,V_shell,W_shell);
-      LimbWiden_arm(-5,C_widen);
-      cout<<"arm degree: "<<degree_arm<<endl;
-     // morph->UpdateFrame(U);
-      if(toggle)viewer.data().set_mesh(V_shell,F_shell);
-      else viewer.data().set_mesh(U,F);
-      viewer.data().set_edges(C_widen,BE,blue);
-      break;
-  case '\'':
-      degree_leg += 5;
-      LimbWiden_leg(5,U,W);
-      LimbWiden_leg(5,V_shell,W_shell);
-      LimbWiden_leg(5,C_widen);
-      cout<<"leg degree: "<<degree_leg<<endl;
-     // morph->UpdateFrame(U);
-      if(toggle)viewer.data().set_mesh(V_shell,F_shell);
-      else viewer.data().set_mesh(U,F);
-      viewer.data().set_edges(C_widen,BE,blue);
-      break;
-  case ';':
-      degree_leg -= 5;
-      LimbWiden_leg(-5,U,W);
-      LimbWiden_leg(-5,V_shell,W_shell);
-      LimbWiden_leg(-5,C_widen);
-      cout<<"leg degree: "<<degree_leg<<endl;
-     // morph->UpdateFrame(U);
-      if(toggle)viewer.data().set_mesh(V_shell,F_shell);
-      else viewer.data().set_mesh(U,F);
-      viewer.data().set_edges(C_widen,BE,blue);
-      break;
+
   case ',':
       selected++;
       selected = std::min(std::max(selected,0),(int)W_dp.cols()-1);
@@ -156,6 +110,20 @@ bool key_down(igl::opengl::glfw::Viewer &viewer, unsigned char key, int mods)
       selected = std::min(std::max(selected,0),(int)W_dp.cols()-1);
       viewer.data().set_data(W_dp.col(selected));
       break;
+  case '=':
+      toggle = !toggle;
+    viewer.data().clear();
+    if(toggle)  {
+        viewer.data().set_mesh(V_shell,F_shell);
+        W_dp = W_shell;
+    }
+    else{
+        viewer.data().set_mesh(U,F);
+        W_dp = W;
+    }
+    //morph->UpdateFrame(V);
+    viewer.data().set_edges(C_U,BE,blue);
+    break;
   case '9':
      {string fileN;
       cout<<"ply file name? "<<flush;
@@ -172,56 +140,44 @@ bool key_down(igl::opengl::glfw::Viewer &viewer, unsigned char key, int mods)
       PrintOBJ(fileN + ".obj", "mrcp.mtl");
       }
       break;
-//  case ';':
-//     {string fileN;
-//      cout<<"mesh/tgf file name? "<<flush;
-//      cin>>fileN;
-//      igl::writeMESH(fileN+".mesh", U, T, F);
-//      igl::writeTGF(fileN+".tgf",C_widen,BE);
-//      }
+  case ';':
+      dual_quat_vec.clear();
+      while(dual_quat_vec.size()==0){
+          string fileN;
+          cout<<"bvh file name? ";cin>>fileN;
+          dual_quat_vec = ReadBVH(fileN, C, BE, P);
+      }
+      U = V; C_U=C;
+      dual_quat_deformer(dual_quat_vec[0],U,W,C_U,BE);
+      viewer.data().clear();
+      viewer.data().set_mesh(U,F);
+      viewer.data().set_edges(C_U,BE,sea_green);
       break;
+  case '6':
+     {int frameNo;
+      cout<<"frame #? "<<flush;
+      cin>>frameNo;
+      U = V; C_U=C;
+      dual_quat_deformer(dual_quat_vec[frameNo],U,W,C_U,BE);
+      viewer.data().set_mesh(U,F);
+      viewer.data().set_edges(C_U,BE,sea_green);
+      }
+      break;
+  case '7':
+  {
+      string prefix; cout<<"prefix? "<<flush; cin>>prefix;
+
+      for(int i=0;i<dual_quat_vec.size();i++){
+          cout<<"FRAME #"<<i<<" "<<flush;
+          U = V; C_U=C;
+          dual_quat_deformer(dual_quat_vec[i],U,W,C_U,BE);
+          PrintOBJ(prefix+to_string(i)+".obj","M_H175W90_simple.mtl");
+      }
+  }
+      break;
+
   }
   return true;
-}
-
-void Morph(){
-    //morphing - use different weights for scaling and rotation
-    pair<vector<Vec3>,vector<Transfo>> scaleRot = CalculateScaleRot(C_widen, C_target, BE);
-    for(int i=0;i<U.rows();i++){
-        Vec3 scale_v = scaleRot.first[0]*W_s(i, 0);
-        for(int j=1;j<C.rows();j++)
-            scale_v = scale_v + scaleRot.first[j]*W_s(i, j);
-
-        Transfo rot_tf = scaleRot.second[0]*W(i, 0);
-        for(int j=1;j<BE.rows();j++)
-            rot_tf = rot_tf + scaleRot.second[j]*W(i, j);
-
-        Point3 p1 = rot_tf*(Point3(U(i,0),U(i,1),U(i,2))+scale_v);
-        U(i, 0) = p1.x; U(i, 1) = p1.y; U(i, 2) = p1.z;
-    }
-    for(int i=0;i<V_shell.rows();i++){
-        Vec3 scale_v = scaleRot.first[0]*W_s_shell(i, 0);
-        for(int j=1;j<C.rows();j++)
-            scale_v = scale_v + scaleRot.first[j]*W_s_shell(i, j);
-
-        Transfo rot_tf = scaleRot.second[0]*W_shell(i, 0);
-        for(int j=1;j<BE.rows();j++)
-            rot_tf = rot_tf + scaleRot.second[j]*W_shell(i, j);
-
-        Point3 p1 = rot_tf*(Point3(V_shell(i,0),V_shell(i,1),V_shell(i,2))+scale_v);
-        V_shell(i, 0) = p1.x; V_shell(i, 1) = p1.y; V_shell(i, 2) = p1.z;
-    }
-}
-
-void Morph_scale(){
-    pair<vector<Vec3>,vector<Transfo>> scaleRot = CalculateScaleRot(C, C_target, BE);
-    for(int i=0;i<U.rows();i++){
-        Vec3 scale_v = scaleRot.first[0]*W_s(i, 0);
-        for(int j=1;j<C.rows();j++)
-            scale_v = scale_v + scaleRot.first[j]*W_s(i, j);
-        Point3 p1 = Point3(V(i,0),V(i,1),V(i,2))+scale_v;
-        U(i, 0) = p1.x; U(i, 1) = p1.y; U(i, 2) = p1.z;
-    }
 }
 
 void PrintPly(string fileN){
@@ -254,169 +210,22 @@ void PrintOBJ(string fileN, string mtlN){
      ofs<<endl<<objStr;
      ofs.close();
 }
-void LimbWiden_arm(double degree, MatrixXd &_U, MatrixXd _W){
-    double rad = degree * PI / 180.;
-    vector<Transfo> tfVec; vector<Vec3> cenVec;
-    for(int i=0;i<C.rows();i++)  cenVec.push_back(Vec3(C_widen(i,0),C_widen(i,1),C_widen(i,2)));
-    for(int i=0;i<BE.rows();i++) tfVec.push_back(Transfo::identity());
-    //C_widen = C;
-    for(int i=0;i<BE.rows();i++){
-        if(i==4)       tfVec[i] = Transfo::rotate(cenVec[BE(i,0)],Vec3(0,-1.,0),rad);
-        else if(i==12) tfVec[i] = Transfo::rotate(cenVec[BE(i,0)],Vec3(0,1.,0),rad);
-        else if(P(i)>0)  tfVec[i] = tfVec[P(i)];
-    }
-
-    for(int i=0;i<_U.rows();i++){
-        Transfo tf = tfVec[0]*_W(i, 0);
-        for(int j=1;j<BE.rows();j++)
-            tf = tf + tfVec[j]*_W(i, j);
-        Point3 p1 = tf*Point3(_U(i,0),_U(i,1),_U(i,2));
-        _U(i, 0) = p1.x; _U(i, 1) = p1.y; _U(i, 2) = p1.z;
-    }
-}
-void LimbWiden_leg(double degree, MatrixXd &_U, MatrixXd _W){
-    double rad = degree * PI / 180.;
-    vector<Transfo> tfVec; vector<Vec3> cenVec;
-    for(int i=0;i<C.rows();i++)  cenVec.push_back(Vec3(C_widen(i,0),C_widen(i,1),C_widen(i,2)));
-    for(int i=0;i<BE.rows();i++) tfVec.push_back(Transfo::identity());
-    //C_widen = C;
-    for(int i=0;i<BE.rows();i++){
-        if(i==16) tfVec[i] = Transfo::rotate(cenVec[BE(i,0)],Vec3(0,-1.,0),rad*0.5);
-        else if(i==20) tfVec[i] = Transfo::rotate(cenVec[BE(i,0)],Vec3(0,1.,0),rad*0.5);
-        else if(P(i)>0)  tfVec[i] = tfVec[P(i)];
-    }
-
-    for(int i=0;i<_U.rows();i++){
-        Transfo tf = tfVec[0]*_W(i, 0);
-        for(int j=1;j<BE.rows();j++)
-            tf = tf + tfVec[j]*_W(i, j);
-        Point3 p1 = tf*Point3(_U(i,0),_U(i,1),_U(i,2));
-        _U(i, 0) = p1.x; _U(i, 1) = p1.y; _U(i, 2) = p1.z;
-    }
-}
-void LimbWiden_arm(double degree, MatrixXd &_C){
-    double rad = degree * PI / 180.;
-    vector<Transfo> tfVec; vector<Vec3> cenVec;
-    for(int i=0;i<_C.rows();i++)  cenVec.push_back(Vec3(_C(i,0),_C(i,1),_C(i,2)));
-    for(int i=0;i<BE.rows();i++) tfVec.push_back(Transfo::identity());
-    //C_widen = C;
-    for(int i=0;i<BE.rows();i++){
-        if(i==4)       tfVec[i] = Transfo::rotate(cenVec[BE(i,0)],Vec3(0,-1.,0),rad);
-        else if(i==12) tfVec[i] = Transfo::rotate(cenVec[BE(i,0)],Vec3(0,1.,0),rad);
-        else if(P(i)>0)  tfVec[i] = tfVec[P(i)];
-        Vec3 cen = tfVec[i]*Point3(_C(BE(i,1),0),_C(BE(i,1),1),_C(BE(i,1),2));
-        _C(BE(i,1),0) = cen.x; _C(BE(i,1),1) = cen.y; _C(BE(i,1),2) = cen.z;
-    }
-}
-void LimbWiden_leg(double degree, MatrixXd &_C){
-    double rad = degree * PI / 180.;
-    vector<Transfo> tfVec; vector<Vec3> cenVec;
-    for(int i=0;i<_C.rows();i++)  cenVec.push_back(Vec3(_C(i,0),_C(i,1),_C(i,2)));
-    for(int i=0;i<BE.rows();i++) tfVec.push_back(Transfo::identity());
-    //C_widen = C;
-    for(int i=0;i<BE.rows();i++){
-        if(i==16) tfVec[i] = Transfo::rotate(cenVec[BE(i,0)],Vec3(0,-1.,0),rad*0.5);
-        else if(i==20) tfVec[i] = Transfo::rotate(cenVec[BE(i,0)],Vec3(0,1.,0),rad*0.5);
-        else if(P(i)>0)  tfVec[i] = tfVec[P(i)];
-        Vec3 cen = tfVec[i]*Point3(_C(BE(i,1),0),_C(BE(i,1),1),_C(BE(i,1),2));
-        _C(BE(i,1),0) = cen.x; _C(BE(i,1),1) = cen.y; _C(BE(i,1),2) = cen.z;
-    }
-}
 
 int BBW_option(int argc, char *argv[]);
-int BARY_option(int argc, char *argv[]);
+int SHELL_option(int argc, char *argv[]);
 int MORPH_option(int argc, char *argv[]);
+int BVH_option(int argc, char *argv[]);
 int main(int argc, char *argv[])
 {
     //arguments
     if(string(argv[1])=="-bbw")
         return BBW_option(argc, argv);
-    else if(string(argv[1])=="-bary")
-        return BARY_option(argc, argv);
+    else if(string(argv[1])=="-shell")
+        return SHELL_option(argc, argv);
+    else if(string(argv[1])=="-bvh")
+        return BVH_option(argc, argv);
     else
         return MORPH_option(argc, argv);
-//    //read model files
-// //   igl::readMESH("IR2_f.1.2.mesh",V,T,F);
-//    igl::readMESH("widen15.mesh",V,T,F);
-//    U=V;
-// //   igl::readTGF("MRCP_AM.tgf",C,BE);
-//    igl::readTGF("widen15.tgf",C,BE);
-//    igl::directed_edge_parents(BE,P);
-
-
-//    //GenerateMorphingWeights("morphing//  case '1':
-    //    Morph();
-    //    morph->UpdateFrame(U);
-    //    viewer.data().clear();
-    //    viewer.data().set_mesh(U,F);
-    //    viewer.data().set_edges(C_target,BE,red);
-    //    break;.weight", "Default.2.2.mesh", C, V, T, BE, F);
-//    //CalculateScalingWeights("Scaling.weight", C, V, T);
-//    //extract polygon
-//    vector<int> extV;
-//    for(int i=0;i<F.rows();i++){
-//        extV.push_back(F(i,0));
-//        extV.push_back(F(i,1));
-//        extV.push_back(F(i,2));
-//    }
-//    sort(extV.begin(), extV.end());
-//    extV.erase(unique(extV.begin(), extV.end()), extV.end());
-//     for(int i=0;i<extV.size();i++) m2p[extV[i]] = i;
-
-//    //argument
-//    string targetJ = string(argv[1]);
-//    ReadTargetOBJ(targetJ, C_target);
-
-//    //Read weights (posture, scaling)
-//    cout<<"Read posture weight..."<<flu//  case '1':
-    //    Morph();
-    //    morph->UpdateFrame(U);
-    //    viewer.data().clear();
-    //    viewer.data().set_mesh(U,F);
-    //    viewer.data().set_edges(C_target,BE,red);
-    //    break;sh;
-//    ifstream ifs("IR2_f.1.m.weight");
-//    double w;
-//    W.resize(V.rows(), BE.rows());
-//    for(int i=0;i<V.rows();i++){
-//        for(int j=0;j<BE.rows();j++){
-//            ifs>>w;
-//            W(i,j) = w;
-//        }
-//    }ifs.close(); cout<<"done"<<endl;
-
-//    ifstream ifs_s("Scaling.weight");
-//    cout<<"Read scaling weight..."<<flush;
-//    W_s.resize(V.rows(), C.rows());
-//    for(int i=0;i<V.rows();i++){
-//        for(int j=0;j<C.rows();j++){
-//            ifs_s>>w;
-//            W_s(i,j) = w;
-//        }
-//    }ifs_s.close(); cout<<"done"<<endl;
-
-//    //morphing test
-//    morph = new morpher(V,"downsampled3.ply");
-//    morph->CalculateMorphWeight(W);
-//    Morph2();
-//    morph->SetTGF(C_target,BE);
-//    morph->UpdateFrame(U);
-//    string targetS = string(argv[2]);
-//    morph->StartMorph(targetS);
-
-//    igl::readPLY("downsampled3.ply",V1, F1);
-
-//    // Plot the mesh with pseudocolors
-//    igl::opengl::glfw::Viewer viewer;
-//    viewer.data().set_mesh(V1, F1);
-//    viewer.data().set_edges(C,BE,sea_green);
-//    viewer.data().show_lines = false;
-//    viewer.data().show_overlay_depth = false;
-//    viewer.data().line_width = 1;
-//    viewer.callback_key_down = &key_down;
-//    viewer.launch();
-
-  return EXIT_SUCCESS;
 }
 int BBW_option(int argc, char *argv[]){
     if(argc!=5 && argc!=6) return EXIT_FAILURE;
@@ -446,15 +255,15 @@ int BBW_option(int argc, char *argv[]){
     cout<<"done ("<<V3.rows()<<"v, "<<T1.rows()<<"e)"<<endl;
 
     cout<<"Generate bary. coord. for whole phantom in frame..."<<flush;
-    map<int, MatrixXd> baryCoord = GenerateBarycentricCoord(V3,T1,V_w);
+    map<int, map<int, double>> baryCoord = GenerateBarycentricCoord(V3,T1,F2,V_w);
     assert(baryCoord.size()==V_w.rows());
-    SparseMatrix<double> bary = GenerateBarySparse(baryCoord,V3.rows(),T1);
+    SparseMatrix<double> bary = GenerateBarySparse(baryCoord,V3.rows());
     cout<<"done (printed "+prefix+".fbary)"<<endl<<"Printing "+prefix+".fbary..."<<flush;
     PrintBaryCoords(prefix+".fbary",baryCoord); cout<<"done"<<endl;
 
     igl::boundary_conditions(V3,T1,C,VectorXi(),BE,MatrixXi(),b,bc);
     igl::BBWData bbw_data;
-    bbw_data.active_set_params.max_iter = 15;
+    bbw_data.active_set_params.max_iter = 20;
     bbw_data.verbosity = 2;
     if(!igl::bbw(V3,T1,b,bc,bbw_data,W_b))  return EXIT_FAILURE;
     CleanWeights(W_b);
@@ -488,7 +297,7 @@ int BBW_option(int argc, char *argv[]){
 
     return EXIT_SUCCESS;
 }
-int BARY_option(int argc, char *argv[]){
+int SHELL_option(int argc, char *argv[]){
     string prefix(argv[2]);
     string shellOBJ(argv[3]);
 
@@ -516,11 +325,11 @@ int BARY_option(int argc, char *argv[]){
     cout<<f2w.size()<<"f)"<<endl;
     ofstream ofs(prefix+"_s.fix"); ofs<<f2w.size()<<endl;
     for(auto iter:f2w) ofs<<iter.second<<endl; ofs.close();
-    cout<<"printed "+prefix+"_s.fix";
+    cout<<"printed "+prefix+"_s.fix"<<endl;
 
-    cout<<"read "+prefix+".mesh..."<<flush;
-    readMESH(prefix+".mesh",V,T,F);
-    cout<<"done ("<<V.rows()<<"v, "<<T.rows()<<"t)"<<endl;
+//    cout<<"read "+prefix+".mesh..."<<flush;
+//    readMESH(prefix+".mesh",V,T,F);
+//    cout<<"done ("<<V.rows()<<"v, "<<T.rows()<<"t)"<<endl;
     cout<<"read weight files "+prefix+"_fb/fj.dmat..."<<flush;
     MatrixXd Wf_b,Wf_j;
     igl::readDMAT(prefix+"_fb.dmat",Wf_b);
@@ -530,43 +339,41 @@ int BARY_option(int argc, char *argv[]){
     MatrixXd V_f; MatrixXi T_f, F_f;
     readMESH(prefix+"_bbwF.mesh",V_f,T_f,F_f);
     cout<<"done ("<<V_f.rows()<<" v/"<<T_f.rows()<<" t)"<<endl;
-    cout<<"read "+prefix+".fbary..."<<flush;
-    map<int, MatrixXd> baryMap = ReadBaryFile(prefix+".fbary");
-    assert(baryMap.size()==V.rows());
-    SparseMatrix<double> bary = GenerateBarySparse(baryMap,V_f.rows(),T_f);
-    cout<<"done ("<<baryMap.size()<<")"<<endl;
-    W = bary*Wf_b; W_s = bary*Wf_j;
-    cout<<"done"<<endl;
+//    cout<<"read "+prefix+".fbary..."<<flush;
+//    map<int, map<int, double>> baryMap = ReadBaryFile(prefix+".fbary");
+//    assert(baryMap.size()==V.rows());
+//    SparseMatrix<double> bary = GenerateBarySparse(baryMap,V_f.rows());
+//    cout<<"done ("<<baryMap.size()<<")"<<endl;
+//    W = bary*Wf_b; W_s = bary*Wf_j;
 
-    cout<<"Generate barycen. coord. for downsampled shell..."<<flush;
-    map<int, MatrixXd> baryShell = GenerateBarycentricCoord(V_f,T_f,V_shell);
+    map<int, map<int, double>> baryShell = GenerateBarycentricCoord(V_f,T_f,F_f,V_shell);
     PrintBaryCoords(prefix+"_s.fbary",baryShell);
-    SparseMatrix<double> baryCoordShell = GenerateBarySparse(baryShell,V_f.rows(),T_f);
     cout<<"calculate shell weights..."<<flush;
+    SparseMatrix<double> baryCoordShell = GenerateBarySparse(baryShell,V_f.rows());
     W_shell = baryCoordShell*Wf_b;
     W_s_shell = baryCoordShell*Wf_j;
     cout<<"done"<<endl;
 
-    cout<<"Generate bary. coord. for whole phantom in shell..."<<flush;
-    morph = new morpher;
-    morph->SetModelV(V);
-    morph->SetFrame(V_shell,T_s);
-    morph->CalculateBaryCoord();
-    morph->PrintBaryCoord(prefix + ".bary");
-    cout<<"Printed "+prefix + ".bary"<<endl;
+//    cout<<"Generate bary. coord. for whole phantom in shell..."<<flush;
+//    morph = new morpher;
+//    morph->SetModelV(V);
+//    morph->SetFrame(V_shell,T_s, F_shell);
+//    morph->CalculateBaryCoord();
+//    morph->PrintBaryCoord(prefix + ".bary");
+//    cout<<"Printed "+prefix + ".bary"<<endl;
 
-    cout<<"Read "+prefix+".obj..."<<flush;
-    MatrixXd V1;
-    objStr = readOBJ(prefix+".obj",V1);
-    o2m = CompareVertices(V1,V);
-    cout<<"done ("<<o2m.size()<<"/"<<V1.rows()<<")"<<endl;
+//    cout<<"Read "+prefix+".obj..."<<flush;
+//    MatrixXd V1;
+//    objStr = readOBJ(prefix+".obj",V1);
+//    o2m = CompareVertices(V1,V);
+//    cout<<"done ("<<o2m.size()<<"/"<<V1.rows()<<")"<<endl;
 
     U=V;
-    C_widen = C;
-    W_dp = W;
+    W_dp = W_shell;
+    cout<<"<INFO> Check weights given to shell phantom by toggling with , and . "<<endl;
     igl::directed_edge_parents(BE,P);
     igl::opengl::glfw::Viewer viewer;
-    viewer.data().set_mesh(V, F);
+    viewer.data().set_mesh(V_shell, F_shell);
     viewer.data().set_edges(C,BE,sea_green);
     viewer.data().show_lines = false;
     viewer.data().show_overlay_depth = false;
@@ -585,11 +392,20 @@ int MORPH_option(int argc, char *argv[]){
     readMESH(prefix+"_s.mesh", V_shell, T_s,F_shell);cout<<"\t"+prefix+"_s.mesh (V"<<V_shell.rows()<<",T"<<T_s.rows()<<flush;
     ifstream ifs(prefix+"_s.fix"); int num, fixID; set<int> fix; ifs>>num;
     for(int i=0;i<num;i++) {ifs>>fixID; fix.insert(fixID);} ifs.close();cout<<",F"<<fix.size()<<")"<<endl;
-    map<int, MatrixXd> bary = ReadBaryFile(prefix+".bary");cout<<"\t"+prefix+".bary ("<<bary.size()<<")"<<endl<<endl;
+    //map<int, MatrixXd> bary = ReadBaryFile(prefix+".bary");cout<<"\t"+prefix+".bary ("<<bary.size()<<")"<<endl;
+    map<int, map<int, double>> baryShell = ReadBaryFile(prefix+"_s.fbary");cout<<"\t"+prefix+"_s.fbary ("<<baryShell.size()<<")"<<endl;
+    MatrixXd V_f; MatrixXi T_f,F_f;
+    readMESH(prefix+"_bbwF.mesh",V_f,T_f,F_f);  cout<<"\t"+prefix+"_bbwF.mesh ("<<V_f.rows()<<" v/"<<T_f.rows()<<" t)"<<endl;
+    MatrixXd Wf_b,Wf_j;
+    igl::readDMAT(prefix+"_fb.dmat",Wf_b); cout<<"\t"+prefix+"_fb.dmat ("<<Wf_b.rows()<<")"<<endl;
+    igl::readDMAT(prefix+"_fj.dmat",Wf_j); cout<<"\t"+prefix+"_fj.dmat ("<<Wf_j.rows()<<")"<<endl;
+    MatrixXd V1;
+    objStr = readOBJ(prefix+".obj",V1);
+    o2m = CompareVertices(V1,V);  cout<<prefix+".obj ("<<o2m.size()<<"/"<<V1.rows()<<")"<<endl;
 
     cout<<"Read target files..."<<flush;
     string target(argv[2]);
-     ReadTargetOBJ(target, V_target, F_target, C_target);
+    ReadTargetOBJ(target, V_target, F_target, C_target);
     cout<<"done (V"<<V_target.rows()<<",F"<<F_target.rows()<<",C"<<C_target.rows()<<")"<<endl;
     assert(C.rows()==C_target.rows());
 
@@ -597,18 +413,77 @@ int MORPH_option(int argc, char *argv[]){
     morph = new morpher;
     morph->SetModelV(V);
     cout<<"\tset "<<V.rows()<<" model vertices"<<endl;
-    morph->SetFrame(V_shell,T_s);
+    morph->SetFrame(V_shell,T_s, F_shell);
+    morph->CalculateBaryCoord();
     cout<<"\tset "<<V_shell.rows()<<"v/"<<T_s.rows()<<"t shell model vertices"<<endl;
     morph->SetShellVFix(fix);
     cout<<"\tset "<<fix.size()<<" shell vertices to fix"<<endl;
-    morph->SetBaryCoord(bary);
-    cout<<"\tset "<<bary.size()<<" bary. coords. for the model"<<endl;
+    morph->SetTGF(C,BE);
+    cout<<"\tset bone info. (C"<<C.rows()<<"/BE"<<BE.rows()<<")"<<endl;
+    MatrixXd bMatShell = GenerateBarySparse(baryShell,V_f.rows());
+    MatrixXd Ws_b = bMatShell*Wf_b;
+    MatrixXd Ws_j = bMatShell*Wf_j;
+    CleanWeights(Ws_b); CleanWeights(Ws_j);
+    morph->SetShellWeights(Ws_b,Ws_j);
+     cout<<"\tset shell weights"<<endl;
+     cout<<"read "+prefix+".fbary..."<<flush;
+     map<int, map<int, double>> baryMap = ReadBaryFile(prefix+".fbary");
+     assert(baryMap.size()==V.rows());
+     SparseMatrix<double> bary = GenerateBarySparse(baryMap,V_f.rows());
+     cout<<"done ("<<baryMap.size()<<")"<<endl;
+     W = bary*Wf_b; W_s = bary*Wf_j;
+     morph->SetWholeWeights(W,W_s);
+     cout<<"\tset whole weights"<<endl;
+     morph->CalculateMorphWeight();
+    map<int, map<int, double>> W_morph = morph->GetMorphWeights();
+    W_dp = MatrixXd::Zero(V_shell.rows(),BE.rows());
+//    W_dp=bMatShell*Wf_b;
+    for(auto i:W_morph)
+        for(auto j:i.second)
+            W_dp(i.first,j.first) = j.second;
 
     U=V;
-    W_dp = W;
     igl::directed_edge_parents(BE,P);
     igl::opengl::glfw::Viewer viewer;
     viewer.data().set_mesh(V_shell, F_shell);
+    viewer.data().set_edges(C,BE,sea_green);
+    viewer.data().show_lines = false;
+    viewer.data().show_overlay_depth = false;
+    viewer.data().line_width = 1;
+    viewer.callback_key_down = &key_down;
+    viewer.launch();
+
+    return EXIT_SUCCESS;
+}
+
+int BVH_option(int argc, char *argv[]){
+    string bvhF(argv[2]);
+    string prefix(argv[3]);
+    cout<<"Read preprocessed files..."<<endl;
+    igl::readTGF(prefix+".tgf",C,BE); cout<<"\t"+prefix+".tgf (C"<<C.rows()<<",BE"<<BE.rows()<<")"<<endl;
+    igl::directed_edge_parents(BE,P);
+    readMESH(prefix+".mesh",V,T,F);cout<<"\t"+prefix+".mesh (V"<<V.rows()<<",T"<<T.rows()<<")"<<endl;
+    MatrixXd V_f; MatrixXi T_f,F_f;
+    readMESH(prefix+"_bbwF.mesh",V_f,T_f,F_f);  cout<<"\t"+prefix+"_bbwF.mesh ("<<V_f.rows()<<" v/"<<T_f.rows()<<" t)"<<endl;
+    MatrixXd Wf_b,Wf_j;
+    igl::readDMAT(prefix+"_fb.dmat",Wf_b); cout<<"\t"+prefix+"_fb.dmat ("<<Wf_b.rows()<<")"<<endl;
+    igl::readDMAT(prefix+"_fj.dmat",Wf_j); cout<<"\t"+prefix+"_fj.dmat ("<<Wf_j.rows()<<")"<<endl;
+    cout<<"read "+prefix+".fbary..."<<flush;
+    map<int, map<int, double>> baryMap = ReadBaryFile(prefix+".fbary");
+    assert(baryMap.size()==V.rows());
+    SparseMatrix<double> bary = GenerateBarySparse(baryMap,V_f.rows());
+    cout<<"done ("<<baryMap.size()<<")"<<endl;
+    W = bary*Wf_b; W_s = bary*Wf_j;
+    MatrixXd V1;
+    objStr = readOBJ(prefix+".obj",V1);
+    o2m = CompareVertices(V1,V);  cout<<prefix+".obj ("<<o2m.size()<<"/"<<V1.rows()<<")"<<endl;
+
+    cout<<"read "<<bvhF<<endl;
+    dual_quat_vec = ReadBVH(bvhF,C,BE,P);
+
+    U=V;
+    igl::opengl::glfw::Viewer viewer;
+    //viewer.data().set_mesh(V, F);
     viewer.data().set_edges(C,BE,sea_green);
     viewer.data().show_lines = false;
     viewer.data().show_overlay_depth = false;
